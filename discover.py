@@ -8,6 +8,9 @@ import logging
 import threading
 import time
 
+HOST = "192.168.0.2"
+USER = "Coelhomatias"
+PASSWORD = "lf171297"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -33,19 +36,22 @@ def on_discover_blinds(client, userdata, msg):
     control.add_component(Blinds(parsed["name"], parsed["unique_id"], parsed["position_topic"], parsed["command_topic"]))
 
 
-control = Controller("blind1", "2c3ae8364cb5", "blinds1/status", "192.168.0.2", "Coelhomatias", "lf171297")
-client = mqtt.Client()
-client.username_pw_set(username="Coelhomatias",password="lf171297")
-client.on_connect = on_connect
-client.message_callback_add("controller/discover/switch/#", on_discover_switch)
-client.message_callback_add("controller/discover/sensor/#", on_discover_sensor)
-client.message_callback_add("controller/discover/cover/#", on_discover_blinds)
+if __name__ == "__main__":
+    
+    control = Controller("blind1", "2c3ae8364cb5", "blinds1/status", HOST, USER, PASSWORD)
+    client = mqtt.Client()
+    client.username_pw_set(username=USER,password=PASSWORD)
+    client.on_connect = on_connect
+    client.message_callback_add("controller/discover/switch/#", on_discover_switch)
+    client.message_callback_add("controller/discover/sensor/#", on_discover_sensor)
+    client.message_callback_add("controller/discover/cover/#", on_discover_blinds)
 
-client.connect("192.168.0.2")
+    client.connect(HOST)
 
 
-# Blocking call that processes network traffic, dispatches callbacks and
-# handles reconnecting.
-# Other loop*() functions are available that give a threaded interface and a
-# manual interface.
-client.loop_forever()
+    # Blocking call that processes network traffic, dispatches callbacks and
+    # handles reconnecting.
+    # Other loop*() functions are available that give a threaded interface and a
+    # manual interface.
+    client.loop_forever()
+

@@ -21,14 +21,30 @@ class Device:
     def get_availability_topic(self):
         return self._availability_topic
     
+    def get_date_of_birth(self):
+        return self._date_of_bith
+    
     def set_Blinds(self, blinds):
         self._blinds = blinds
+    
+    def set_position_Blinds(self, position):
+        self._blinds.set_position(position)
+    
+    def get_position_Blinds(self):
+        return self._blinds.get_position()
 
     def add_Sensor(self, sensor):
         self._sensors[sensor.get_unique_id()] = sensor
     
     def set_value_Sensor(self, unique_id, value):
-        self._sensors[unique_id] = value
+        self._sensors[unique_id].set_value(value)
+    
+    def set_value_Sensor_with_topic(self, topic, value):
+        for sensor in self._sensors:
+            if self._sensors[sensor].get_state_topic() == topic:
+                self._sensors[sensor].set_value(value)
+                break
+        #Add some debugging
 
     def get_value_Sensor(self, unique_id):
         return self._sensors[unique_id].get_value()
