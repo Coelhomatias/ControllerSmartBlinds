@@ -4,35 +4,30 @@ import time
 class Worker(Process):
 
     def __init__(self):
-        self._p_con, self._c_con = Pipe()
-        Process.__init__(self, args=self._c_con)
+        Process.__init__(self)
         self.is_running = True
         self.escafia = True
-
-
-    def test(self, i):
-        print("cacacaccacacac + " + i)
 
     def run(self):
         while self.is_running:
             print ('In %s' % self.name)
-            Worker.escafia = False
+            self.set_escafia()
         return
     
+    def set_escafia(self):
+        self.escafia = False
+
     def get_escafia(self):
         return self.escafia
-    
-    def stop(self):
-        self.is_running=False
 
 if __name__ == '__main__':
-    jobs = []
-    for i in range(5):
-        p = Worker()
-        p.daemon = True
-        jobs.append(p)
-        p.start()
-    time.sleep(5)
-    for j in jobs:
-        print(j.get_escafia())
-        j.stop()
+    p = Worker()
+    p.start()
+    time.sleep(1)
+    print(p.get_escafia())
+    p.terminate()
+    p.join()
+    print(p.get_escafia())
+    p.start()
+    p.terminate()
+    p.join()
