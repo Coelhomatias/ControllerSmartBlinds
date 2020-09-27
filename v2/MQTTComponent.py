@@ -2,15 +2,25 @@ import paho.mqtt.client as mqtt
 
 class MQTTComponent:
 
-    def __init__(self, mqtt_host, mqtt_user, mqtt_passwd, name="MQTTComponent"):
+    def __init__(self, identifier, mqtt_host, mqtt_user, mqtt_passwd, name="MQTTComponent", alt_client=None):
         self._name = name
+        self._identifier = identifier
         self._host = mqtt_host
         self._user = mqtt_user
         self._passwd = mqtt_passwd
-        self._client = mqtt.Client()
+        self._alt_client = alt_client
+        self._client_userdata = {'alt_client':alt_client}
+        self._client = mqtt.Client(userdata=self._client_userdata)
         self._client.username_pw_set(username=mqtt_user, password=mqtt_passwd)
         self._client.on_connect = self.on_connect
         self._client.on_disconnect = self.on_disconnect
+        
+    
+    def get_name(self):
+        return self._name
+
+    def get_id(self):
+        return self._identifier
     
     def on_connect(self, client, userdata, flags, rc):
         print(self._name + " connected with result code: " + str(rc))
@@ -28,9 +38,11 @@ class MQTTComponent:
         self._client.message_callback_add(topic, function)
     
     def run(self):
-        self._client.connect(self._host)
-        self._client.loop_start()
+        if not self._client.is_connected():
+            self._client.connect(self._host)
+            self._client.loop_start()
     
     def stop(self):
-        self._client.disconnect()
-        self._client.loop_stop()
+        if self._client.is_connected():
+            self._client.disconnect()
+            self._client.loop_stop()
