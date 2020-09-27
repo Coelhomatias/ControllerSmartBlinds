@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 testes.py
 testes2.py
+temp.txt

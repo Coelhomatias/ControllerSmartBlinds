@@ -10,9 +10,13 @@ class MQTTComponent:
         self._client = mqtt.Client()
         self._client.username_pw_set(username=mqtt_user, password=mqtt_passwd)
         self._client.on_connect = self.on_connect
+        self._client.on_disconnect = self.on_disconnect
     
     def on_connect(self, client, userdata, flags, rc):
         print(self._name + " connected with result code: " + str(rc))
+    
+    def on_disconnect(self, client, userdata, rc):
+        print(self._name + " disconnected with result code: " + str(rc))
     
     def subscribe_to_topic(self, topic, qos):
         self._client.subscribe(topic, qos)
@@ -28,4 +32,5 @@ class MQTTComponent:
         self._client.loop_start()
     
     def stop(self):
+        self._client.disconnect()
         self._client.loop_stop()

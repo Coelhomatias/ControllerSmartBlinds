@@ -3,7 +3,8 @@ from skmultiflow.meta import AdaptiveRandomForestRegressor
 from resettabletimer import ResettableTimer
 import datetime as dt
 import time
-
+import copy
+import joblib
 
 class Controller():
 
@@ -65,7 +66,14 @@ class Controller():
                 sensor, self.on_sensor_state_change)
         #Set the Timer
         self._timer = ResettableTimer(self._timeout, self.set_availability)
-        self._timer.start()
+        self._timer.reset()
+
+    def stop_MQTTComponent(self):
+        self._mqtt.stop()
+        del self._mqtt
+        self._timer.cancel()
+        del self._timer
+    
 
     def on_position_change(self, client, userdata, msg):
         print("Received Blind Position Change from topic: " +
@@ -99,6 +107,12 @@ class Controller():
 def execution(device, credentials, run):
     control = Controller(device.get_name() + "_controller", device.get_id(), device)
     control.set_MQTTComponent(credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"])
+    #time.sleep(10)
+    #control.stop_MQTTComponent()
+    #t = dt.datetime.now()
+    #joblib.dump(control, "temp.txt")
+    #print("Time to write:", dt.datetime.now() - t)
+    #control.set_MQTTComponent(credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"])
     while True:
         if run.value and control._is_active:
             print("Inside Process motherfucker!!")
