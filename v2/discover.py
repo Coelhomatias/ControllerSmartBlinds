@@ -24,6 +24,10 @@ HOST = "192.168.0.2"
 USER = "Coelhomatias"
 PASSWORD = "lf171297"
 NUMBER_OF_SENSORS = 2
+TRAIN_EVERY = 1 #minutes
+SAVE_TIME_H = 4 #At what hour of the day
+SAVE_TIME_M = 30 #At what minute
+STOP_PRED_INTERVAL = 30 #minutes 
 MAX_DEVICES = mp.cpu_count() + 2
 number_of_devices = 0
 
@@ -45,7 +49,6 @@ def on_discover_switch(client, userdata, msg):
                      parsed["device"]["identifiers"])
         if not device_id in nodes:
             create_device(parsed, device_id)
-
         # Add Switch to Device
         nodes[device_id]["device"].set_Switch(Switch(
             parsed["name"], parsed["unique_id"], parsed["state_topic"], parsed["command_topic"]))
@@ -65,7 +68,6 @@ def on_discover_sensor(client, userdata, msg):
                      parsed["device"]["identifiers"])
         if not device_id in nodes:
             create_device(parsed, device_id)
-
         # Add Sensor to Device
         nodes[device_id]["device"].add_Sensor(Sensor(
             parsed["name"], parsed["unique_id"], parsed["state_topic"], parsed["unit_of_measurement"]))
@@ -85,7 +87,6 @@ def on_discover_blinds(client, userdata, msg):
                      parsed["device"]["identifiers"])
         if not device_id in nodes:
             create_device(parsed, device_id)
-
         # Add Blinds to Device
         nodes[device_id]["device"].set_Blinds(Blinds(
             parsed["name"], parsed["unique_id"], parsed["position_topic"], parsed["command_topic"]))
@@ -105,12 +106,10 @@ def on_availability(client, userdata, msg):
         if msg.payload.decode() == "online":
             nodes[availability[msg.topic]]["mqtt"].run()
             nodes[availability[msg.topic]]["train_job"].resume()
-            nodes[availability[msg.topic]]["update_job"].resume()
             nodes[availability[msg.topic]]["save_job"].resume()
         else:
             nodes[availability[msg.topic]]["mqtt"].stop()
             nodes[availability[msg.topic]]["train_job"].pause()
-            nodes[availability[msg.topic]]["update_job"].pause()
             nodes[availability[msg.topic]]["save_job"].pause()
 
 
@@ -120,6 +119,15 @@ def create_device(dictionary, device_id):
         "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS),
         "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     }
+    try:
+        time = dt.datetime.now()
+        data = joblib.load("Models\\" + device_id + '.gz')
+        print("Took", dt.datetime.now() - time, "seconds to load model")
+        node["device"].set_model(data["model"])
+        node["device"].set_date_of_birth(data["date_of_birth"])
+        print("Loading existing model for device:", device_id)
+    except:
+        pass
     nodes[device_id] = node
     nodes[device_id]["mqtt"].run()
     availability[dictionary["availability_topic"]] = device_id
@@ -131,13 +139,10 @@ def check_if_finished(device_id):
     if nodes[device_id]["device"].is_full() and not "train_job" in nodes[device_id]:
         print("Device Finished. Starting Jobs")
         train_job = scheduler.add_job(func=train_device, args=(
-            device_id, ), executor='default', trigger='cron', minute='*/5')
-        update_job = scheduler.add_job(func=update_device, args=(
-            device_id,), executor='default', trigger='cron', minute="*", second=58)
+            device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
             device_id,), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*")
         nodes[device_id]["train_job"] = train_job
-        nodes[device_id]["update_job"] = update_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
         # Availability section
@@ -150,8 +155,27 @@ def check_if_finished(device_id):
 def train_device(device_id):
     print("Getting example...")
     X, y = prepare_example(device_id)
-    nodes[device_id]["device"].partial_fit(X, y)
+    """ last_pred = nodes[device_id]["device"].get_last_pred()
+    y_pred = nodes[device_id]["device"].predict(X)
+
+    if last_pred != y and last_pred != None:  # The user changed position
+        # Stop predicting for 30 minutes
+        print("Wrong prediction, waiting 30 minutes...")
+        nodes[device_id]["device"].set_able_to_predict(False)
+        scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
+            True,), trigger='interval', minutes=STOP_PRED_INTERVAL)
+
+    if nodes[device_id]["device"].get_able_to_predict() and nodes[device_id]["device"].get_state_Switch() == "ON":
+        print("Sending prediction to:", device_id)
+        nodes[device_id]["mqtt"].publish_to_topic(
+            nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
+        nodes[device_id]["device"].set_last_pred(y_pred) """
+
+    nodes[device_id]["device"].partial_fit(X, [y])
+    nodes[device_id]["save_job"].modify(
+        args=(nodes[device_id]["device"], ))
     print("Training " + device_id + "'s model")
+
 
 def prepare_example(device_id):
     X, y = nodes[device_id]["device"].get_example()
@@ -168,36 +192,19 @@ def prepare_example(device_id):
     X['holiday'] = X.time.dt.date.isin(pt_holidays).astype(int)
     #X['lights'] = [1 if (row[2] > row[3] or (row[2] > 0 and row[1] == 0)) else 0 for row in X.to_numpy()]
     X = X.drop(columns='time')
-    return X.to_numpy(), [y]
-
-
-def update_device(device_id):
-    print("Updating job!!")
-    nodes[device_id]["save_job"].modify(
-        args=(nodes[device_id]["device"], ))
-
+    return X.to_numpy(), y
 
 def save_device(device):
-    saved = False
     device_id = device.get_id()
+    data = {
+        "model": device.get_model(),
+        "date_of_birth": device.get_date_of_birth()
+    }
     print("Inside save_device Process. Saving device")
-
-    try:
-        with open(FILE_PATH, "rt") as f:
-            for dev_id in f:
-                if device_id in dev_id:
-                    saved = True
-    except:
-        pass
     time = dt.datetime.now()
     joblib.dump(
-        device, "Devices\\" + device_id)
-    print("Took", dt.datetime.now() - time, "seconds to save Device")
-    if not saved:
-        with open(FILE_PATH, "at") as f:
-            f.write(device_id + '\n')
-            f.flush()
-    print("Inside save_device Process. Finished saving Device")
+        data, "Models\\" + device_id + '.gz', compress=('gzip', 3))
+    print("Took", dt.datetime.now() - time, "seconds to save model")
 
 
 if __name__ == "__main__":

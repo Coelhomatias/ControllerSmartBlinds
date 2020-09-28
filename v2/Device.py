@@ -8,12 +8,11 @@ import datetime as dt
 
 class Device:
 
-    def __init__(self, name, identifier, availability_topic, number_of_sensors, timeout=350, learning_time=dt.timedelta(days=7),
+    def __init__(self, name, identifier, availability_topic, number_of_sensors, learning_time=dt.timedelta(days=7),
             model=AdaptiveRandomForestRegressor(random_state=43, n_estimators=100, grace_period=50, max_features=11, leaf_prediction='mean', split_confidence=0.09, lambda_value=10)):
         self._name = name
         self._identifier = identifier
         self._availability_topic = availability_topic
-        self._timeout = timeout #In seconds
         self._date_of_birth = dt.datetime.now()
         self._learning_time = learning_time
         self._model = model
@@ -21,6 +20,8 @@ class Device:
         self._switch = None
         self._blinds = None
         self._number_of_sensors = number_of_sensors
+        self._last_pred = None
+        self._able_to_predict = True
 
     def get_name(self):
         return self._name
@@ -34,6 +35,21 @@ class Device:
     def get_date_of_birth(self):
         return self._date_of_birth
     
+    def set_date_of_birth(self, date):
+        self._date_of_birth = date
+    
+    def set_last_pred(self, pred):
+        self._last_pred = pred
+    
+    def get_last_pred(self):
+        return self._last_pred
+    
+    def set_able_to_predict(self, val):
+        self._able_to_predict = val
+
+    def get_able_to_predict(self):
+        return self._able_to_predict
+    
     def set_model(self, model):
         self._model = model
 
@@ -41,7 +57,8 @@ class Device:
         return self._model
 
     def predict(self, X):
-        return self._model.predict(X)
+        prediction = max(min(round(self._model.predict(X)[0]), 100), 0)
+        return prediction
 
     def fit(self, X, y):
         self._model.fit(X, y)
@@ -103,10 +120,11 @@ class Device:
         self.set_value_Sensor(msg.topic, float(msg.payload.decode()))
 
     def on_switch_state_change(self, client, userdata, msg):
+        message = msg.payload.decode()
         print("Received Switch State Change from topic: " +
-              msg.topic + ' --> ' + msg.payload.decode())
+              msg.topic + ' --> ' + message)
         if (dt.datetime.now() >= self._date_of_birth + self._learning_time):
-            self.set_state_Switch(msg.payload.decode())
-        elif msg.payload.decode() == "ON":
+            self.set_state_Switch(message)
+        elif message == "ON":
             userdata['alt_client'].publish(
                 topic=self._switch.get_command_topic(), payload="OFF", qos=1)

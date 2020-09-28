@@ -127,7 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-Devices
+Models
 testes.py
 testes2.py
 temp.txt
