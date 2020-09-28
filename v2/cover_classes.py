@@ -79,3 +79,34 @@ class Switch:
 
     def set_state(self, state):
         self._state = state
+
+class Metrics:
+    
+    def __init__(self, name, unique_id, state_topic, metric):
+        self._name = name
+        self._unique_id = unique_id
+        self._state_topic = state_topic
+        self._metric = metric
+        self._value_topic = state_topic.replace("state", "value")
+
+    def get_name(self):
+        return self._name
+
+    def get_unique_id(self):
+        return self._unique_id
+
+    def get_state_topic(self):
+        return self._state_topic
+    
+    def get_value_topic(self):
+        return self._value_topic
+
+    def get_metric(self):
+        return self._metric
+    
+    def update_metric(self, y_true, y_pred):
+        self._metric.update(y_true, y_pred)
+
+    def get_value(self):
+        return self._metric.get()
+

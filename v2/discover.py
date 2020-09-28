@@ -1,33 +1,34 @@
-import paho.mqtt.client as mqtt
-import json
-import time
-import joblib
-import pandas as pd
-import numpy as np
-import holidays
 import datetime as dt
-# Custom Classes
-from mqttComponent import MQTTComponent
-from cover_classes import Blinds, Sensor, Switch
-import device
-from device import Device
-# Multiprocessing
+import json
 import multiprocessing as mp
+import time
 from multiprocessing import Process, Value
-# Scheduler
+
 import apscheduler as aps
+import holidays
+import joblib
+import numpy as np
+import paho.mqtt.client as mqtt
+import pandas as pd
+from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
+from creme import metrics
+
+import device
+from cover_classes import Blinds, Metrics, Sensor, Switch
+from device import Device
+from mqttComponent import MQTTComponent
 
 FILE_PATH = "saved_devices.txt"
 HOST = "192.168.0.2"
 USER = "Coelhomatias"
 PASSWORD = "lf171297"
 NUMBER_OF_SENSORS = 2
-TRAIN_EVERY = 1 #minutes
-SAVE_TIME_H = 4 #At what hour of the day
-SAVE_TIME_M = 30 #At what minute
-STOP_PRED_INTERVAL = 30 #minutes 
+NUMBER_OF_METRICS = 2
+TRAIN_EVERY = 5  # minutes
+SAVE_TIME_H = 4  # At what hour of the day
+SAVE_TIME_M = 30  # At what minute
+STOP_PRED_INTERVAL = 30  # minutes
 MAX_DEVICES = mp.cpu_count() + 2
 number_of_devices = 0
 
@@ -68,13 +69,22 @@ def on_discover_sensor(client, userdata, msg):
                      parsed["device"]["identifiers"])
         if not device_id in nodes:
             create_device(parsed, device_id)
-        # Add Sensor to Device
-        nodes[device_id]["device"].add_Sensor(Sensor(
-            parsed["name"], parsed["unique_id"], parsed["state_topic"], parsed["unit_of_measurement"]))
-        # Handle MQTT subscribe and callbacks
-        nodes[device_id]["mqtt"].subscribe_to_topic(parsed["state_topic"], 1)
-        nodes[device_id]["mqtt"].add_message_callback(
-            parsed["state_topic"], nodes[device_id]["device"].on_sensor_state_change)
+        try:
+            # Add Sensor to Device
+            nodes[device_id]["device"].add_Sensor(Sensor(
+                parsed["name"], parsed["unique_id"], parsed["state_topic"], parsed["unit_of_measurement"]))
+            # Handle MQTT subscribe and callbacks
+            nodes[device_id]["mqtt"].subscribe_to_topic(
+                parsed["state_topic"], 1)
+            nodes[device_id]["mqtt"].add_message_callback(
+                parsed["state_topic"], nodes[device_id]["device"].on_sensor_state_change)
+        except:
+            if 'mae' in parsed["state_topic"]:
+                nodes[device_id]["device"].add_Metrics(Metrics(
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.MAE()))
+            elif 'rmse' in parsed["state_topic"]:
+                nodes[device_id]["device"].add_Metrics(Metrics(
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.RMSE()))
         # Check if Device as all components
         check_if_finished(device_id)
 
@@ -116,7 +126,7 @@ def on_availability(client, userdata, msg):
 def create_device(dictionary, device_id):
     global number_of_devices
     node = {
-        "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS),
+        "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS),
         "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     }
     try:
@@ -125,6 +135,8 @@ def create_device(dictionary, device_id):
         print("Took", dt.datetime.now() - time, "seconds to load model")
         node["device"].set_model(data["model"])
         node["device"].set_date_of_birth(data["date_of_birth"])
+        for metric in data["metrics"]:
+            node["device"].add_Metrics(data["metrics"][metric])
         print("Loading existing model for device:", device_id)
     except:
         pass
@@ -136,12 +148,12 @@ def create_device(dictionary, device_id):
 
 
 def check_if_finished(device_id):
-    if nodes[device_id]["device"].is_full() and not "train_job" in nodes[device_id]:
+    if nodes[device_id]["device"].is_full() and not "train_job" in nodes[device_id] and not "save_job" in nodes[device_id]:
         print("Device Finished. Starting Jobs")
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            device_id,), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*")
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/10")
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -155,10 +167,10 @@ def check_if_finished(device_id):
 def train_device(device_id):
     print("Getting example...")
     X, y = prepare_example(device_id)
-    """ last_pred = nodes[device_id]["device"].get_last_pred()
+    last_pred = nodes[device_id]["device"].get_last_pred()
     y_pred = nodes[device_id]["device"].predict(X)
-
-    if last_pred != y and last_pred != None:  # The user changed position
+    
+    """ if last_pred != y and last_pred != None and nodes[device_id]["device"].get_able_to_predict():  # The user changed position
         # Stop predicting for 30 minutes
         print("Wrong prediction, waiting 30 minutes...")
         nodes[device_id]["device"].set_able_to_predict(False)
@@ -172,6 +184,7 @@ def train_device(device_id):
         nodes[device_id]["device"].set_last_pred(y_pred) """
 
     nodes[device_id]["device"].partial_fit(X, [y])
+    nodes[device_id]["device"].update_Metrics(y, y_pred, nodes[device_id]["mqtt"])
     nodes[device_id]["save_job"].modify(
         args=(nodes[device_id]["device"], ))
     print("Training " + device_id + "'s model")
@@ -194,11 +207,13 @@ def prepare_example(device_id):
     X = X.drop(columns='time')
     return X.to_numpy(), y
 
+
 def save_device(device):
     device_id = device.get_id()
     data = {
         "model": device.get_model(),
-        "date_of_birth": device.get_date_of_birth()
+        "date_of_birth": device.get_date_of_birth(),
+        "metrics": device.get_Metrics()
     }
     print("Inside save_device Process. Saving device")
     time = dt.datetime.now()
@@ -235,9 +250,4 @@ if __name__ == "__main__":
     client.message_callback_add(
         "controller/discover/cover/#", on_discover_blinds)
     client.connect(HOST)
-
-    # Blocking call that processes network traffic, dispatches callbacks and
-    # handles reconnecting.
-    # Other loop*() functions are available that give a threaded interface and a
-    # manual interface.
     client.loop_forever()
