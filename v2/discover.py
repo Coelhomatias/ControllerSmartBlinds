@@ -145,7 +145,7 @@ def create_device(dictionary, device_id):
     }
     try:
         time = dt.datetime.now()
-        data = joblib.load("Models\\" + device_id + '.gz')
+        data = joblib.load("Models\\" + device_id)
         print("Took", dt.datetime.now() - time, "seconds to load model")
         node["device"].set_model(data["model"])
         node["device"].set_date_of_birth(data["date_of_birth"])
@@ -232,7 +232,7 @@ def save_device(device):
     print("Inside save_device Process. Saving device")
     time = dt.datetime.now()
     joblib.dump(
-        data, "Models\\" + device_id + '.gz', compress=('gzip', 3))
+        data, "Models\\" + device_id)
     print("Took", dt.datetime.now() - time, "seconds to save model")
 
 

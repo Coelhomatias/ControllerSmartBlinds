@@ -128,6 +128,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 Models
-testes.py
-testes2.py
-temp.txt
+ARFRegressionModel
