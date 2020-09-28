@@ -25,7 +25,7 @@ USER = "Coelhomatias"
 PASSWORD = "lf171297"
 NUMBER_OF_SENSORS = 2
 NUMBER_OF_METRICS = 2
-TRAIN_EVERY = 5  # minutes
+TRAIN_EVERY = 1  # minutes
 SAVE_TIME_H = 4  # At what hour of the day
 SAVE_TIME_M = 30  # At what minute
 STOP_PRED_INTERVAL = 30  # minutes
@@ -40,6 +40,20 @@ def on_connect(client, userdata, flags, rc):
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe("controller/discover/#", 1)
+    try:
+        for dic in nodes:
+            nodes[dic]["mqtt"].run()
+            nodes[dic]["train_job"].resume()
+            nodes[dic]["save_job"].resume()
+    except:
+        pass
+
+def on_disconnect(client, userdata, rc):
+    print("Discover disconnected with result code " + str(rc))
+    for dic in nodes:
+        nodes[dic]["mqtt"].stop()
+        nodes[dic]["train_job"].pause()
+        nodes[dic]["save_job"].pause()
 
 
 def on_discover_switch(client, userdata, msg):
@@ -153,7 +167,7 @@ def check_if_finished(device_id):
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/10")
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*")
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -243,6 +257,7 @@ if __name__ == "__main__":
     client = mqtt.Client()
     client.username_pw_set(username=USER, password=PASSWORD)
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.message_callback_add(
         "controller/discover/switch/#", on_discover_switch)
     client.message_callback_add(
