@@ -23,12 +23,14 @@ FILE_PATH = "saved_devices.txt"
 HOST = "192.168.0.2"
 USER = "Coelhomatias"
 PASSWORD = "lf171297"
-NUMBER_OF_SENSORS = 2
+NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
+TRAINING_TIME = dt.timedelta(minutes=20)
+ALLOWED_ERROR = 2
 TRAIN_EVERY = 1  # minutes
 SAVE_TIME_H = 4  # At what hour of the day
 SAVE_TIME_M = 30  # At what minute
-STOP_PRED_INTERVAL = 30  # minutes
+STOP_PRED_INTERVAL = 5  # minutes
 MAX_DEVICES = mp.cpu_count() + 2
 number_of_devices = 0
 
@@ -113,7 +115,7 @@ def on_discover_blinds(client, userdata, msg):
             create_device(parsed, device_id)
         # Add Blinds to Device
         nodes[device_id]["device"].set_Blinds(Blinds(
-            parsed["name"], parsed["unique_id"], parsed["position_topic"], parsed["command_topic"]))
+            parsed["name"], parsed["unique_id"], parsed["position_topic"], parsed["set_position_topic"]))
         # Handle MQTT subscribe and callbacks
         nodes[device_id]["mqtt"].subscribe_to_topic(
             parsed["position_topic"], 1)
@@ -140,7 +142,7 @@ def on_availability(client, userdata, msg):
 def create_device(dictionary, device_id):
     global number_of_devices
     node = {
-        "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS),
+        "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, learning_time=TRAINING_TIME),
         "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     }
     try:
@@ -167,7 +169,7 @@ def check_if_finished(device_id):
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*")
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/10")
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -184,18 +186,19 @@ def train_device(device_id):
     last_pred = nodes[device_id]["device"].get_last_pred()
     y_pred = nodes[device_id]["device"].predict(X)
     
-    """ if last_pred != y and last_pred != None and nodes[device_id]["device"].get_able_to_predict():  # The user changed position
+    if last_pred not in list(range(y - ALLOWED_ERROR, y + ALLOWED_ERROR + 1)) and last_pred != None and nodes[device_id]["device"].get_able_to_predict():  # The user changed position
         # Stop predicting for 30 minutes
-        print("Wrong prediction, waiting 30 minutes...")
+        print("Wrong prediction, waiting", STOP_PRED_INTERVAL, "minutes...")
         nodes[device_id]["device"].set_able_to_predict(False)
         scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
             True,), trigger='interval', minutes=STOP_PRED_INTERVAL)
+        nodes[device_id]["device"].set_last_pred(None)
 
     if nodes[device_id]["device"].get_able_to_predict() and nodes[device_id]["device"].get_state_Switch() == "ON":
         print("Sending prediction to:", device_id)
         nodes[device_id]["mqtt"].publish_to_topic(
             nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
-        nodes[device_id]["device"].set_last_pred(y_pred) """
+        nodes[device_id]["device"].set_last_pred(y_pred)
 
     nodes[device_id]["device"].partial_fit(X, [y])
     nodes[device_id]["device"].update_Metrics(y, y_pred, nodes[device_id]["mqtt"])
@@ -210,15 +213,16 @@ def prepare_example(device_id):
     X['time'] = dt.datetime.now()
     X['quarter'] = X.time.dt.quarter
     X['month'] = X.time.dt.month
-    X['weekofyear'] = X.time.dt.weekofyear
+    X['weekofyear'] = X.time.dt.isocalendar().week #.weekofyear is deprecated
     X['dayofmonth'] = X.time.dt.day
     X['dayofyear'] = X.time.dt.dayofyear
     X['dayofweek'] = X.time.dt.dayofweek
     X['hour'] = X.time.dt.hour
     X['minute'] = X.time.dt.minute
     X['holiday'] = X.time.dt.date.isin(pt_holidays).astype(int)
-    #X['lights'] = [1 if (row[2] > row[3] or (row[2] > 0 and row[1] == 0)) else 0 for row in X.to_numpy()]
+    X['lights'] = [1 if (row[1] > row[3] or (row[1] > 0 and y == 0)) else 0 for row in X.to_numpy()]
     X = X.drop(columns='time')
+    #print(X.head())
     return X.to_numpy(), y
 
 
