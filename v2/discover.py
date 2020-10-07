@@ -19,13 +19,12 @@ from cover_classes import Blinds, Metrics, Sensor, Switch
 from device import Device
 from mqttComponent import MQTTComponent
 
-FILE_PATH = "saved_devices.txt"
 HOST = "192.168.0.2"
 USER = "Coelhomatias"
 PASSWORD = "lf171297"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
-TRAINING_TIME = dt.timedelta(minutes=20)
+TRAINING_TIME = dt.timedelta(minutes=10)
 ALLOWED_ERROR = 2
 TRAIN_EVERY = 1  # minutes
 SAVE_TIME_H = 4  # At what hour of the day
