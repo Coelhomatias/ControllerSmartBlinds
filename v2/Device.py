@@ -22,6 +22,8 @@ class Device:
         self._blinds = None
         self._number_of_sensors = number_of_sensors
         self._number_of_metrics = number_of_metrics
+        #self._last_true = 100
+        #self._last_example
         self._last_pred = None
         self._able_to_predict = True
 
