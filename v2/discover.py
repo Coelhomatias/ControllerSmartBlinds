@@ -261,18 +261,22 @@ if __name__ == "__main__":
     }
     pt_holidays = holidays.PT()
 
-    scheduler = BackgroundScheduler(executors=executors)
-    scheduler.start()
+    try:
+        scheduler = BackgroundScheduler(executors=executors)
+        scheduler.start()
 
-    client = mqtt.Client()
-    client.username_pw_set(username=USER, password=PASSWORD)
-    client.on_connect = on_connect
-    client.on_disconnect = on_disconnect
-    client.message_callback_add(
-        "controller/discover/switch/#", on_discover_switch)
-    client.message_callback_add(
-        "controller/discover/sensor/#", on_discover_sensor)
-    client.message_callback_add(
-        "controller/discover/cover/#", on_discover_blinds)
-    client.connect(HOST, PORT)
-    client.loop_forever()
+        client = mqtt.Client()
+        client.username_pw_set(username=USER, password=PASSWORD)
+        client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+        client.message_callback_add(
+            "controller/discover/switch/#", on_discover_switch)
+        client.message_callback_add(
+            "controller/discover/sensor/#", on_discover_sensor)
+        client.message_callback_add(
+            "controller/discover/cover/#", on_discover_blinds)
+        client.connect(HOST, PORT)
+        client.loop_forever()
+    except KeyboardInterrupt:
+        print("Exiting Adaptive Controller. Bye!")
+
