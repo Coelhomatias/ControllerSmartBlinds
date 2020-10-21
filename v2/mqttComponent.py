@@ -2,12 +2,13 @@ import paho.mqtt.client as mqtt
 
 class MQTTComponent:
 
-    def __init__(self, identifier, mqtt_host, mqtt_user, mqtt_passwd, name="MQTTComponent", alt_client=None):
+    def __init__(self, identifier, mqtt_host, mqtt_user, mqtt_passwd, mqtt_port, name="MQTTComponent", alt_client=None):
         self._name = name
         self._identifier = identifier
         self._host = mqtt_host
         self._user = mqtt_user
         self._passwd = mqtt_passwd
+        self._port = mqtt_port
         self._alt_client = alt_client
         self._client_userdata = {'alt_client':alt_client}
         self._client = mqtt.Client(userdata=self._client_userdata)
@@ -39,7 +40,7 @@ class MQTTComponent:
     
     def run(self):
         if not self._client.is_connected():
-            self._client.connect(self._host)
+            self._client.connect(self._host, port=self._port)
             self._client.loop_start()
     
     def stop(self):

@@ -19,10 +19,14 @@ from cover_classes import Blinds, Metrics, Sensor, Switch
 from device import Device
 from mqttComponent import MQTTComponent
 
+
+############################# USER CONFIG #############################
 HOST = "192.168.0.2"
-USER = "Coelhomatias"
-PASSWORD = "lf171297"
-FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
+PORT = 12183  #PORT = 1883
+USER = ''     #USER = "Coelhomatias"
+PASSWORD= ''  #PASSWORD = "lf171297"
+FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models"  
+#FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
 TRAINING_TIME = dt.timedelta(minutes=5)
@@ -32,10 +36,9 @@ SAVE_TIME_H = 4  # At what hour of the day
 SAVE_TIME_M = 30  # At what minute
 STOP_PRED_INTERVAL = 5  # minutes
 MAX_DEVICES = mp.cpu_count() + 2
+########################## END OF USER CONFIG #########################
+
 number_of_devices = 0
-
-# The callback for when the client receives a CONNACK response from the server.
-
 
 def on_connect(client, userdata, flags, rc):
     print("Discover connected with result code " + str(rc))
@@ -143,7 +146,7 @@ def create_device(dictionary, device_id):
     global number_of_devices
     node = {
         "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, learning_time=TRAINING_TIME),
-        "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
+        "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], credentials["mqtt_port"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     }
     try:
         time = dt.datetime.now()
@@ -169,7 +172,7 @@ def check_if_finished(device_id):
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/5")
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5") #Must change trigger
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -228,15 +231,15 @@ def prepare_example(device_id):
 
 def save_device(device):
     device_id = device.get_id()
-    data = {
-        "model": device.get_model(),
-        "date_of_birth": device.get_date_of_birth(),
-        "metrics": device.get_Metrics()
-    }
+    # data = {
+    #     "model": device.get_model(),
+    #     "date_of_birth": device.get_date_of_birth(),
+    #     "metrics": device.get_Metrics()
+    # }
     print("Inside save_device Process. Saving device")
     time = dt.datetime.now()
     joblib.dump(
-        data, FILEPATH + device_id)
+        device, FILEPATH + device_id)
     print("Took", dt.datetime.now() - time, "seconds to save model")
 
 
@@ -247,7 +250,8 @@ if __name__ == "__main__":
     credentials = {
         "mqtt_host": HOST,
         "mqtt_user": USER,
-        "mqtt_passwd": PASSWORD
+        "mqtt_passwd": PASSWORD,
+        "mqtt_port": PORT
     }
     executors = {
         'default': ThreadPoolExecutor(20),
@@ -268,5 +272,5 @@ if __name__ == "__main__":
         "controller/discover/sensor/#", on_discover_sensor)
     client.message_callback_add(
         "controller/discover/cover/#", on_discover_blinds)
-    client.connect(HOST)
+    client.connect(HOST, PORT)
     client.loop_forever()
