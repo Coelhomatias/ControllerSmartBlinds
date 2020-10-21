@@ -102,7 +102,7 @@ class Device:
     def update_Metrics(self, y_true, y_pred, mqtt_component):
         for metric in self._metrics:
             self._metrics[metric].update_metric(y_true, y_pred)
-            print("sending message to topic:", self._metrics[metric].get_value_topic(), "with payload:", round(self._metrics[metric].get_value(), 2))
+            print("Sending message to topic:", self._metrics[metric].get_value_topic(), "with payload:", round(self._metrics[metric].get_value(), 2))
             mqtt_component.publish_to_topic(
                 self._metrics[metric].get_value_topic(), round(self._metrics[metric].get_value(), 2), 1)
 

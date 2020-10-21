@@ -97,10 +97,10 @@ def on_discover_sensor(client, userdata, msg):
         except:
             if 'mae' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.MAE()))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.MAE(), 10080/TRAIN_EVERY)))
             elif 'rmse' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.RMSE()))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.RMSE(), 10080/TRAIN_EVERY)))
         # Check if Device as all components
         check_if_finished(device_id)
 
