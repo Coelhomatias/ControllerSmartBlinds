@@ -22,10 +22,10 @@ from mqttComponent import MQTTComponent
 
 ############################# USER CONFIG #############################
 HOST = "192.168.0.2"
-PORT = 12183  #PORT = 1883
-USER = ''     #USER = "Coelhomatias"
-PASSWORD= ''  #PASSWORD = "lf171297"
-FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models"  
+PORT = 12183  # PORT = 1883
+USER = ''  # USER = "Coelhomatias"
+PASSWORD = ''  # PASSWORD = "lf171297"
+FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models\\"
 #FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
@@ -40,6 +40,7 @@ MAX_DEVICES = mp.cpu_count() + 2
 
 number_of_devices = 0
 
+
 def on_connect(client, userdata, flags, rc):
     print("Discover connected with result code " + str(rc))
     # Subscribing in on_connect() means that if we lose the connection and
@@ -52,6 +53,7 @@ def on_connect(client, userdata, flags, rc):
             nodes[dic]["save_job"].resume()
     except:
         pass
+
 
 def on_disconnect(client, userdata, rc):
     print("Discover disconnected with result code " + str(rc))
@@ -100,10 +102,10 @@ def on_discover_sensor(client, userdata, msg):
         except:
             if 'mae' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.MAE(), 10080/TRAIN_EVERY)))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.MAE(), int(10080/TRAIN_EVERY))))
             elif 'rmse' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.RMSE(), 10080/TRAIN_EVERY)))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.RMSE(), int(10080/TRAIN_EVERY))))
         # Check if Device as all components
         check_if_finished(device_id)
 
@@ -144,26 +146,23 @@ def on_availability(client, userdata, msg):
 
 def create_device(dictionary, device_id):
     global number_of_devices
-    node = {
-        "device": Device(dictionary["device"]["name"] + '_' + "Device", device_id, dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, learning_time=TRAINING_TIME),
-        "mqtt": MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"], credentials["mqtt_port"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
-    }
     try:
         time = dt.datetime.now()
         data = joblib.load(FILEPATH + device_id)
-        print("Took", dt.datetime.now() - time, "seconds to load model")
-        node["device"].set_model(data["model"])
-        node["device"].set_date_of_birth(data["date_of_birth"])
-        for metric in data["metrics"]:
-            node["device"].add_Metrics(data["metrics"][metric])
-        print("Loading existing model for device:", device_id)
+        print("Loaded existing device:", device_id)
+        print("Took", dt.datetime.now() - time, "seconds to load device")
+        node = {"device": data}
     except:
-        pass
+        print("Creating new device:", device_id)
+        node = {"device": Device(dictionary["device"]["name"] + '_' + "Device", device_id,
+                                 dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, learning_time=TRAINING_TIME)}
+    node["mqtt"] = MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"],
+                                 credentials["mqtt_port"], name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     nodes[device_id] = node
     nodes[device_id]["mqtt"].run()
     availability[dictionary["availability_topic"]] = device_id
     number_of_devices += 1
-    print("Added new device to nodes with identifier:", device_id)
+    print("Added device to nodes with identifier:", device_id)
 
 
 def check_if_finished(device_id):
@@ -172,7 +171,7 @@ def check_if_finished(device_id):
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5") #Must change trigger
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5")  # Must change trigger
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -188,8 +187,9 @@ def train_device(device_id):
     X, y = prepare_example(device_id)
     last_pred = nodes[device_id]["device"].get_last_pred()
     y_pred = nodes[device_id]["device"].predict(X)
-    
-    if last_pred not in list(range(y - ALLOWED_ERROR, y + ALLOWED_ERROR + 1)) and last_pred != None and nodes[device_id]["device"].get_able_to_predict():  # The user changed position
+
+    # The user changed position
+    if last_pred not in list(range(y - ALLOWED_ERROR, y + ALLOWED_ERROR + 1)) and last_pred != None and nodes[device_id]["device"].get_able_to_predict():
         # Stop predicting for 30 minutes
         print("Wrong prediction, waiting", STOP_PRED_INTERVAL, "minutes...")
         nodes[device_id]["device"].set_able_to_predict(False)
@@ -204,7 +204,8 @@ def train_device(device_id):
         nodes[device_id]["device"].set_last_pred(y_pred)
 
     nodes[device_id]["device"].partial_fit(X, [y])
-    nodes[device_id]["device"].update_Metrics(y, y_pred, nodes[device_id]["mqtt"])
+    nodes[device_id]["device"].update_Metrics(
+        y, y_pred, nodes[device_id]["mqtt"])
     nodes[device_id]["save_job"].modify(
         args=(nodes[device_id]["device"], ))
     print("Training " + device_id + "'s model")
@@ -216,16 +217,17 @@ def prepare_example(device_id):
     X['time'] = dt.datetime.now()
     X['quarter'] = X.time.dt.quarter
     X['month'] = X.time.dt.month
-    X['weekofyear'] = X.time.dt.isocalendar().week #.weekofyear is deprecated
+    X['weekofyear'] = X.time.dt.isocalendar().week
     X['dayofmonth'] = X.time.dt.day
     X['dayofyear'] = X.time.dt.dayofyear
     X['dayofweek'] = X.time.dt.dayofweek
     X['hour'] = X.time.dt.hour
     X['minute'] = X.time.dt.minute
     X['holiday'] = X.time.dt.date.isin(pt_holidays).astype(int)
-    X['lights'] = [1 if (row[1] > row[3] or (row[1] > 0 and y == 0)) else 0 for row in X.to_numpy()]
+    X['lights'] = [1 if (row[1] > row[3] or (
+        row[1] > 0 and y == 0)) else 0 for row in X.to_numpy()]
     X = X.drop(columns='time')
-    #print(X.head())
+    # print(X.head())
     return X.to_numpy(), y
 
 
