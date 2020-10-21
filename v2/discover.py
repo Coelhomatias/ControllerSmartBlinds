@@ -22,9 +22,10 @@ from mqttComponent import MQTTComponent
 HOST = "192.168.0.2"
 USER = "Coelhomatias"
 PASSWORD = "lf171297"
+FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
-TRAINING_TIME = dt.timedelta(minutes=10)
+TRAINING_TIME = dt.timedelta(minutes=5)
 ALLOWED_ERROR = 2
 TRAIN_EVERY = 1  # minutes
 SAVE_TIME_H = 4  # At what hour of the day
@@ -146,7 +147,7 @@ def create_device(dictionary, device_id):
     }
     try:
         time = dt.datetime.now()
-        data = joblib.load("Models\\" + device_id)
+        data = joblib.load(FILEPATH + device_id)
         print("Took", dt.datetime.now() - time, "seconds to load model")
         node["device"].set_model(data["model"])
         node["device"].set_date_of_birth(data["date_of_birth"])
@@ -168,7 +169,7 @@ def check_if_finished(device_id):
         train_job = scheduler.add_job(func=train_device, args=(
             device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
         save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/10")
+            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=5, trigger='cron', minute="*/5")
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         print("Added new jobs to node. The processes were started")
@@ -235,7 +236,7 @@ def save_device(device):
     print("Inside save_device Process. Saving device")
     time = dt.datetime.now()
     joblib.dump(
-        data, "Models\\" + device_id)
+        data, FILEPATH + device_id)
     print("Took", dt.datetime.now() - time, "seconds to save model")
 
 
