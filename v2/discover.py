@@ -176,7 +176,7 @@ def check_if_finished(device_id):
         logger.log('info', device_id + " Finished")
         logger.log('info', "Adding jobs to node " + device_id)
         train_job = scheduler.add_job(func=train_device, args=(
-            device_id, ), executor='default', trigger='cron', minute=('*/' + str(TRAIN_EVERY)))
+            device_id, ), executor='default', trigger='interval', minute=TRAIN_EVERY)
         save_job = scheduler.add_job(func=save_device, args=(
             nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5")  # Must change trigger
         nodes[device_id]["train_job"] = train_job
@@ -188,6 +188,10 @@ def check_if_finished(device_id):
         client.message_callback_add(
             nodes[device_id]["device"].get_availability_topic(), on_availability)
 
+def predict_timeout(device_id):
+    with lock:
+        nodes[device_id]["device"].log_message('info', "Timeout finished. Can predict again")
+        nodes[device_id]["device"].set_able_to_predict(True)
 
 def train_device(device_id):
     nodes[device_id]["device"].log_message(
@@ -211,8 +215,7 @@ def train_device(device_id):
                 nodes[device_id]["device"].log_message(
                     'info', "Waiting " + str(STOP_PRED_INTERVAL) + " minutes to next prediction")
                 nodes[device_id]["device"].set_able_to_predict(False)
-                scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
-                    True,), trigger='interval', minutes=STOP_PRED_INTERVAL, seconds=1)
+                scheduler.add_job(func=predict_timeout, args=(device_id,), trigger='interval', minutes=STOP_PRED_INTERVAL, end_date=(dt.datetime.now() + dt.timedelta(minutes=STOP_PRED_INTERVAL, seconds=5)), max_instances=1, replace_existing=True)
                 # nodes[device_id]["device"].set_last_pred(None)
 
             if nodes[device_id]["device"].get_able_to_predict():
