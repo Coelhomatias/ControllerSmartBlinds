@@ -35,9 +35,8 @@ class _AnsiColorStreamHandler():
             levelname = 'C'
             color = self.CRITICAL
 
-        time = str(dt.datetime.now().hour) + ':' + str(dt.datetime.now().minute) + ':' + \
-            ('00' if dt.datetime.now().second ==
-             0 else str(dt.datetime.now().second))
+        time = ('0' + str(dt.datetime.now().hour) if dt.datetime.now().hour < 10 else str(dt.datetime.now().hour)) + ':' + ('0' + str(dt.datetime.now().minute) if dt.datetime.now().minute <
+                                                                                                                            10 else str(dt.datetime.now().minute)) + ':' + ('0' + str(dt.datetime.now().second) if dt.datetime.now().second < 10 else str(dt.datetime.now().second))
         text = '[' + time + '][' + levelname + \
             '][' + self._name + ']: ' + message
         print(color + text + self.DEFAULT)
@@ -88,9 +87,8 @@ class _WinColorStreamHandler():
         elif level == 'critical':
             levelname = 'C'
 
-        time = str(dt.datetime.now().hour) + ':' + str(dt.datetime.now().minute) + ':' + \
-            ('00' if dt.datetime.now().second ==
-             0 else str(dt.datetime.now().second))
+        time = ('0' + str(dt.datetime.now().hour) if dt.datetime.now().hour < 10 else str(dt.datetime.now().hour)) + ':' + ('0' + str(dt.datetime.now().minute) if dt.datetime.now().minute <
+                                                                                                                            10 else str(dt.datetime.now().minute)) + ':' + ('0' + str(dt.datetime.now().second) if dt.datetime.now().second < 10 else str(dt.datetime.now().second))
         text = '[' + time + '][' + levelname + \
             '][' + self._name + ']: ' + message
         print(text)
