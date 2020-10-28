@@ -31,8 +31,8 @@ HOST = "192.168.0.2"
 PORT = 12183  # PORT = 1883
 USER = ''  # USER = "Coelhomatias"
 PASSWORD = ''  # PASSWORD = "lf171297"
-FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models\\"
-#FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
+#FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models\\"
+FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
 TRAINING_TIME = dt.timedelta(minutes=5)
@@ -212,7 +212,7 @@ def train_device(device_id):
                     'info', "Waiting " + str(STOP_PRED_INTERVAL) + " minutes to next prediction")
                 nodes[device_id]["device"].set_able_to_predict(False)
                 scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
-                    True,), trigger='interval', minutes=STOP_PRED_INTERVAL)
+                    True,), trigger='interval', minutes=STOP_PRED_INTERVAL, seconds=1)
                 # nodes[device_id]["device"].set_last_pred(None)
 
             if nodes[device_id]["device"].get_able_to_predict():
@@ -220,7 +220,7 @@ def train_device(device_id):
                     'info', "Sending prediction to device")
                 nodes[device_id]["mqtt"].publish_to_topic(
                     nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
-
+        
         if last_example.size != 0 and last_pred != None:
             nodes[device_id]["device"].log_message(
                 'info', "Training device's model")
