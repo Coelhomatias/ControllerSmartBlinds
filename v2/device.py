@@ -9,7 +9,7 @@ import numpy as np
 
 class Device:
 
-    def __init__(self, name, identifier, availability_topic, number_of_sensors, number_of_metrics, learning_time=dt.timedelta(days=7),
+    def __init__(self, name, identifier, availability_topic, number_of_sensors, number_of_metrics, logger, learning_time=dt.timedelta(days=7),
                  model=AdaptiveRandomForestRegressor(random_state=43, n_estimators=100, grace_period=50, max_features=11, leaf_prediction='mean', split_confidence=0.09, lambda_value=10)):
         self._name = name
         self._identifier = identifier
@@ -23,6 +23,7 @@ class Device:
         self._blinds = None
         self._number_of_sensors = number_of_sensors
         self._number_of_metrics = number_of_metrics
+        self._logger = logger
         #self._last_true = 100
         self._last_example = np.array([])
         self._last_pred = None
@@ -109,7 +110,7 @@ class Device:
     def update_Metrics(self, y_true, y_pred, mqtt_component):
         for metric in self._metrics:
             self._metrics[metric].update_metric(y_true, y_pred)
-            print("Sending message to topic:", self._metrics[metric].get_value_topic(), "with payload:", round(self._metrics[metric].get_value(), 2))
+            mqtt_component._logger.log('debug', "Sending message to topic: " + self._metrics[metric].get_value_topic() + " with payload: " + str(round(self._metrics[metric].get_value(), 2)))
             mqtt_component.publish_to_topic(
                 self._metrics[metric].get_value_topic(), round(self._metrics[metric].get_value(), 2), 1)
 
@@ -136,21 +137,24 @@ class Device:
         return False
 
     def on_position_change(self, client, userdata, msg):
-        print("Received Blind Position Change from topic: " +
-              msg.topic + ' --> ' + msg.payload.decode())
+        userdata['logger'].log('debug', "Received Blind Position Change from topic: " + msg.topic + ' --> ' + str(msg.payload.decode()))
         self.set_position_Blinds(int(msg.payload.decode()))
 
     def on_sensor_state_change(self, client, userdata, msg):
-        print("Received Sensor State Change from topic: " +
-              msg.topic + ' --> ' + msg.payload.decode())
+        userdata['logger'].log('debug', "Received Sensor State Change from topic: " +
+              msg.topic + ' --> ' + str(msg.payload.decode()))
         self.set_value_Sensor(msg.topic, float(msg.payload.decode()))
 
     def on_switch_state_change(self, client, userdata, msg):
         message = msg.payload.decode()
-        print("Received Switch State Change from topic: " +
+        userdata['logger'].log('debug', "Received Switch State Change from topic: " +
               msg.topic + ' --> ' + message)
         if (dt.datetime.now() >= self._date_of_birth + self._learning_time):
             self.set_state_Switch(message)
         elif message == "ON":
             userdata['alt_client'].publish(
                 topic=self._switch.get_command_topic(), payload="OFF", qos=1)
+    
+    def log_message(self, level, message):
+        self._logger.log(level, message)
+
