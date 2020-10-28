@@ -130,3 +130,4 @@ dmypy.json
 Models
 ARFRegressionModel
 model_to_device.py
+teste.py

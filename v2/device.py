@@ -4,6 +4,7 @@ from cover_classes import Switch
 from skmultiflow.meta import AdaptiveRandomForestRegressor
 from multiprocessing import Value
 import datetime as dt
+import numpy as np
 
 
 class Device:
@@ -23,7 +24,7 @@ class Device:
         self._number_of_sensors = number_of_sensors
         self._number_of_metrics = number_of_metrics
         #self._last_true = 100
-        #self._last_example
+        self._last_example = np.array([])
         self._last_pred = None
         self._able_to_predict = True
 
@@ -47,6 +48,12 @@ class Device:
 
     def get_last_pred(self):
         return self._last_pred
+    
+    def set_last_example(self, example):
+        self._last_example = example
+
+    def get_last_example(self):
+        return self._last_example
 
     def set_able_to_predict(self, val):
         self._able_to_predict = val

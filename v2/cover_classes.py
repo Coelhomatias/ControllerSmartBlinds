@@ -33,6 +33,7 @@ class Sensor:
         self._unique_id = unique_id
         self._state_topic = state_topic
         self._units = units
+        self._value = 0
 
     def get_name(self):
         return self._name

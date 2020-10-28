@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import multiprocessing as mp
 import time
+import threading
 from multiprocessing import Process, Value
 
 import apscheduler as aps
@@ -183,32 +184,39 @@ def check_if_finished(device_id):
 
 
 def train_device(device_id):
-    print("Getting example...")
-    X, y = prepare_example(device_id)
-    last_pred = nodes[device_id]["device"].get_last_pred()
-    y_pred = nodes[device_id]["device"].predict(X)
-
-    # The user changed position
-    if last_pred not in list(range(y - ALLOWED_ERROR, y + ALLOWED_ERROR + 1)) and last_pred != None and nodes[device_id]["device"].get_able_to_predict():
-        # Stop predicting for 30 minutes
-        print("Wrong prediction, waiting", STOP_PRED_INTERVAL, "minutes...")
-        nodes[device_id]["device"].set_able_to_predict(False)
-        scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
-            True,), trigger='interval', minutes=STOP_PRED_INTERVAL)
-        nodes[device_id]["device"].set_last_pred(None)
-
-    if nodes[device_id]["device"].get_able_to_predict() and nodes[device_id]["device"].get_state_Switch() == "ON":
-        print("Sending prediction to:", device_id)
-        nodes[device_id]["mqtt"].publish_to_topic(
-            nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
+    print("Getting example for device:", device_id)
+    with lock:
+        X, y = prepare_example(device_id)
+        last_example = nodes[device_id]["device"].get_last_example()
+        last_pred = nodes[device_id]["device"].get_last_pred()
+        y_pred = nodes[device_id]["device"].predict(X)
         nodes[device_id]["device"].set_last_pred(y_pred)
+        print("#######################Prediction############################# :", y_pred)
+        nodes[device_id]["device"].set_last_example(X)
 
-    nodes[device_id]["device"].partial_fit(X, [y])
-    nodes[device_id]["device"].update_Metrics(
-        y, y_pred, nodes[device_id]["mqtt"])
-    nodes[device_id]["save_job"].modify(
-        args=(nodes[device_id]["device"], ))
-    print("Training " + device_id + "'s model")
+        if nodes[device_id]["device"].get_state_Switch() == "ON" and nodes[device_id]["device"].get_able_to_predict():
+            # The user changed position
+            if last_pred not in list(range(y - ALLOWED_ERROR, y + ALLOWED_ERROR + 1)):
+                # Stop predicting for 30 minutes
+                print("Wrong prediction, waiting", STOP_PRED_INTERVAL, "minutes for device:", device_id)
+                nodes[device_id]["device"].set_able_to_predict(False)
+                scheduler.add_job(func=nodes[device_id]["device"].set_able_to_predict, args=(
+                    True,), trigger='interval', minutes=STOP_PRED_INTERVAL)
+                #nodes[device_id]["device"].set_last_pred(None)
+            
+            if nodes[device_id]["device"].get_able_to_predict():
+                print("Sending prediction to:", device_id)
+                nodes[device_id]["mqtt"].publish_to_topic(
+                    nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
+        
+        if last_example.size != 0 and last_pred != None:
+            print("Training device:", device_id)
+            nodes[device_id]["device"].partial_fit(last_example, [y])
+            nodes[device_id]["device"].update_Metrics(
+                y, last_pred, nodes[device_id]["mqtt"])
+            nodes[device_id]["save_job"].modify(
+                args=(nodes[device_id]["device"], ))
+            print("Training " + device_id + "'s model")
 
 
 def prepare_example(device_id):
@@ -260,6 +268,7 @@ if __name__ == "__main__":
         'processpool': ProcessPoolExecutor(mp.cpu_count() + 2)
     }
     pt_holidays = holidays.PT()
+    lock = threading.Lock()
 
     try:
         scheduler = BackgroundScheduler(executors=executors)
