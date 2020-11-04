@@ -31,8 +31,8 @@ HOST = "192.168.0.2"
 PORT = 12183  # PORT = 1883
 USER = ''  # USER = "Coelhomatias"
 PASSWORD = ''  # PASSWORD = "lf171297"
-#FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models\\"
-FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
+FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\ControllerSmartBlinds\\Models\\"
+#FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
 TRAINING_TIME = dt.timedelta(minutes=5)
@@ -176,7 +176,7 @@ def check_if_finished(device_id):
         logger.log('info', device_id + " Finished")
         logger.log('info', "Adding jobs to node " + device_id)
         train_job = scheduler.add_job(func=train_device, args=(
-            device_id, ), executor='default', trigger='interval', minute=TRAIN_EVERY)
+            device_id, ), executor='default', trigger='interval', minutes=TRAIN_EVERY)
         save_job = scheduler.add_job(func=save_device, args=(
             nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5")  # Must change trigger
         nodes[device_id]["train_job"] = train_job
