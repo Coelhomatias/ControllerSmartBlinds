@@ -2,6 +2,9 @@ from cover_classes import Blinds
 from cover_classes import Sensor
 from cover_classes import Switch
 from skmultiflow.meta import AdaptiveRandomForestRegressor
+from creme import linear_model
+from creme import compose
+from creme import preprocessing
 from multiprocessing import Value
 import datetime as dt
 import numpy as np
@@ -9,14 +12,12 @@ import numpy as np
 
 class Device:
 
-    def __init__(self, name, identifier, availability_topic, number_of_sensors, number_of_metrics, logger, learning_time=dt.timedelta(days=7),
-                 model=AdaptiveRandomForestRegressor(random_state=43, n_estimators=100, grace_period=50, max_features=11, leaf_prediction='mean', split_confidence=0.09, lambda_value=10)):
+    def __init__(self, name, identifier, availability_topic, number_of_sensors, number_of_metrics, logger, model, learning_time=dt.timedelta(days=7)):
         self._name = name
         self._identifier = identifier
         self._availability_topic = availability_topic
         self._date_of_birth = dt.datetime.now()
         self._learning_time = learning_time
-        self._model = model
         self._sensors = {}
         self._metrics = {}
         self._switch = None
@@ -28,6 +29,13 @@ class Device:
         self._last_example = np.array([])
         self._last_pred = None
         self._able_to_predict = True
+        
+        if model == 1:
+            self.log_message('info', 'Using AdaptiveRandomForestRegressor model')
+            self._model = AdaptiveRandomForestRegressor(random_state=43, n_estimators=100, grace_period=50, max_features=11, leaf_prediction='mean', split_confidence=0.09, lambda_value=10)
+        elif model == 2:
+            self.log_message('info', 'Using PARegressor model')
+            self._model = preprocessing.StandardScaler() | compose.Discard('lights') | linear_model.PARegressor(C=0.05, mode=1, eps=0.1)
 
     def get_name(self):
         return self._name
@@ -69,14 +77,19 @@ class Device:
         return self._model
 
     def predict(self, X):
-        prediction = max(min(round(self._model.predict(X)[0]), 100), 0)
+        if hasattr(self._model, 'predict'):
+            prediction = max(min(round(self._model.predict(X.to_numpy())[0]), 100), 0)
+        elif hasattr(self._model, 'predict_one'):
+            prediction = max(min(round(self._model.predict_one(X.to_dict(orient='records')[0])), 100), 0)
         return prediction
 
-    def fit(self, X, y):
-        self._model.fit(X, y)
-
     def partial_fit(self, X, y):
-        self._model.partial_fit(X, y)
+        if hasattr(self._model, 'partial_fit'):
+            #print("hellooooo from ARFR")
+            self._model.partial_fit(X.to_numpy(), [y])
+        elif hasattr(self._model, 'fit_one'):
+            #print("hellooooo from PAR")
+            self._model.fit_one(X.to_dict(orient='records')[0], y)
 
     def set_Blinds(self, blinds):
         self._blinds = blinds

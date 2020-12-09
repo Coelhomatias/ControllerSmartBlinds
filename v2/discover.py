@@ -7,6 +7,7 @@ import atexit
 from multiprocessing import Process, Value
 
 import logging
+import creme
 import colorstreamhandler
 import apscheduler as aps
 import holidays
@@ -35,12 +36,16 @@ FILEPATH = "C:\\Users\\Leandro Filipe\\Documents\\FCT\\5º ano\\Tese\\Controller
 #FILEPATH = "/home/pi/ControllerSmartBlinds/Models/"
 NUMBER_OF_SENSORS = 4
 NUMBER_OF_METRICS = 2
-TRAINING_TIME = dt.timedelta(minutes=5)
 ALLOWED_ERROR = 2
-TRAIN_EVERY = 1  # minutes
+TRAINING_TIME = dt.timedelta(minutes=5)
+TRAIN_INTERVAL = 1  # minutes
+# 1 - Save with SAVE_INTERVAL; 2 - Save at SAVE_TIME_H hours and SAVE_TIME_M minutes
+SAVE_INT_OR_TIME = 1
+SAVE_INTERVAL = 5  # minutes
 SAVE_TIME_H = 4  # At what hour of the day
 SAVE_TIME_M = 30  # At what minute
 STOP_PRED_INTERVAL = 5  # minutes
+MODEL = 1   # 1 - AdaptiveRandomForestRegressor 2 - PassiveAgressiveRegressor
 MAX_DEVICES = mp.cpu_count() + 2
 ########################## END OF USER CONFIG #########################
 
@@ -107,10 +112,10 @@ def on_discover_sensor(client, userdata, msg):
         except:
             if 'mae' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.MAE(), int(10080/TRAIN_EVERY))))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.MAE(), int(10080/TRAIN_INTERVAL))))
             elif 'rmse' in parsed["state_topic"]:
                 nodes[device_id]["device"].add_Metrics(Metrics(
-                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.RMSE(), int(10080/TRAIN_EVERY))))
+                    parsed["name"], parsed["unique_id"], parsed["state_topic"], metrics.Rolling(metrics.RMSE(), int(10080/TRAIN_INTERVAL))))
         # Check if Device as all components
         check_if_finished(device_id)
 
@@ -156,12 +161,12 @@ def create_device(dictionary, device_id):
         data = joblib.load(FILEPATH + device_id)
         logger.log('info', "Loaded existing device: " + device_id)
         logger.log('debug', "Took " + str(dt.datetime.now() - time) +
-                     " seconds to load " + device_id)
+                   " seconds to load " + device_id)
         node = {"device": data}
     except:
         logger.log('info', "Creating new device: " + device_id)
         node = {"device": Device(dictionary["device"]["name"] + '_' + "Device", device_id,
-                                 dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, logger=create_logger(device_id), learning_time=TRAINING_TIME)}
+                                 dictionary["availability_topic"], NUMBER_OF_SENSORS, NUMBER_OF_METRICS, logger=create_logger(device_id), model=MODEL, learning_time=TRAINING_TIME)}
     node["mqtt"] = MQTTComponent(device_id, credentials["mqtt_host"], credentials["mqtt_user"], credentials["mqtt_passwd"],
                                  credentials["mqtt_port"], logger=create_logger(device_id + "_mqtt"), name=dictionary["device"]["name"] + '_' + "MQQTComponent", alt_client=client)
     nodes[device_id] = node
@@ -176,9 +181,15 @@ def check_if_finished(device_id):
         logger.log('info', device_id + " Finished")
         logger.log('info', "Adding jobs to node " + device_id)
         train_job = scheduler.add_job(func=train_device, args=(
-            device_id, ), executor='default', trigger='interval', minutes=TRAIN_EVERY)
-        save_job = scheduler.add_job(func=save_device, args=(
-            nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', minute="*/5")  # Must change trigger
+            device_id, ), executor='default', trigger='interval', minutes=TRAIN_INTERVAL)
+        if SAVE_INT_OR_TIME == 1:
+            save_job = scheduler.add_job(func=save_device, args=(
+                nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='interval', minutes=SAVE_INTERVAL)
+        elif SAVE_INT_OR_TIME == 2:
+            save_job = scheduler.add_job(func=save_device, args=(
+                nodes[device_id]["device"], ), executor='processpool', misfire_grace_time=30, trigger='cron', hour=SAVE_TIME_H, minute=SAVE_TIME_M)
+        else:
+            logger.log('error', "Invalid Option for SAVE_INT_OR_TIME")
         nodes[device_id]["train_job"] = train_job
         nodes[device_id]["save_job"] = save_job
         logger.log('info', "Starting jobs for " + device_id)
@@ -188,10 +199,13 @@ def check_if_finished(device_id):
         client.message_callback_add(
             nodes[device_id]["device"].get_availability_topic(), on_availability)
 
+
 def predict_timeout(device_id):
     with lock:
-        nodes[device_id]["device"].log_message('info', "Timeout finished. Can predict again")
+        nodes[device_id]["device"].log_message(
+            'info', "Timeout finished. Can predict again")
         nodes[device_id]["device"].set_able_to_predict(True)
+
 
 def train_device(device_id):
     nodes[device_id]["device"].log_message(
@@ -215,7 +229,8 @@ def train_device(device_id):
                 nodes[device_id]["device"].log_message(
                     'info', "Waiting " + str(STOP_PRED_INTERVAL) + " minutes to next prediction")
                 nodes[device_id]["device"].set_able_to_predict(False)
-                scheduler.add_job(func=predict_timeout, args=(device_id,), trigger='interval', minutes=STOP_PRED_INTERVAL, end_date=(dt.datetime.now() + dt.timedelta(minutes=STOP_PRED_INTERVAL, seconds=5)), max_instances=1, replace_existing=True)
+                scheduler.add_job(func=predict_timeout, args=(device_id,), trigger='interval', minutes=STOP_PRED_INTERVAL, end_date=(
+                    dt.datetime.now() + dt.timedelta(minutes=STOP_PRED_INTERVAL, seconds=5)), max_instances=1, replace_existing=True)
                 # nodes[device_id]["device"].set_last_pred(None)
 
             if nodes[device_id]["device"].get_able_to_predict():
@@ -223,11 +238,11 @@ def train_device(device_id):
                     'info', "Sending prediction to device")
                 nodes[device_id]["mqtt"].publish_to_topic(
                     nodes[device_id]["device"]._blinds.get_command_topic(), y_pred, 1)
-        
+
         if last_example.size != 0 and last_pred != None:
             nodes[device_id]["device"].log_message(
                 'info', "Training device's model")
-            nodes[device_id]["device"].partial_fit(last_example, [y])
+            nodes[device_id]["device"].partial_fit(last_example, y)
             nodes[device_id]["device"].update_Metrics(
                 y, last_pred, nodes[device_id]["mqtt"])
             nodes[device_id]["save_job"].modify(
@@ -250,8 +265,9 @@ def prepare_example(device_id):
     X['lights'] = [1 if (row[1] > row[3] or (
         row[1] > 0 and y == 0)) else 0 for row in X.to_numpy()]
     X = X.drop(columns='time')
-    # print(X.head())
-    return X.to_numpy(), y
+    # print(X.to_dict(orient='records')[0])
+    # print(y)
+    return X, y
 
 
 def save_device(device):
@@ -271,6 +287,7 @@ def save_device(device):
 
 def create_logger(name):
     return colorstreamhandler.ColorLogger(name)
+
 
 def OnExitApp(user):
     for node in nodes:
